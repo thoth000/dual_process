@@ -54,7 +54,7 @@ Model                                              | Model Size | VRAM (GB) | Of
 @article{luo2025dualprocess,
   title={Dual-Process Image Generation},
   author={Grace Luo and Jonathan Granskog and Aleksander Holynski and Trevor Darrell},
-  journal={arXiv preprint},
+  journal={arXiv preprint arXiv:2506.01955},
   year={2025}
 }
 ```
