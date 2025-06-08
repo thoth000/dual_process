@@ -7,6 +7,7 @@ opt_kwargs:
   opt_cls: torch.optim.AdamW
   num_opt_steps: 100
   eval_every_n: ${opt_kwargs.num_opt_steps}
+  train_n: ${opt_kwargs.num_opt_steps}
   train_seed: 100
   train_weight: 5
   optimizer_kwargs:
