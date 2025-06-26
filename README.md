@@ -51,10 +51,10 @@ Model                                              | Model Size | VRAM (GB) | Of
 
 ## Citing
 ```
-@article{luo2025dualprocess,
-  title={Dual-Process Image Generation},
-  author={Grace Luo and Jonathan Granskog and Aleksander Holynski and Trevor Darrell},
-  journal={arXiv preprint arXiv:2506.01955},
-  year={2025}
+@inproceedings{luo2025dualprocess,
+    title={Dual-Process Image Generation},
+    author={Grace Luo and Jonathan Granskog and Aleksander Holynski and Trevor Darrell},
+    booktitle={ICCV},
+    year={2025}
 }
 ```
