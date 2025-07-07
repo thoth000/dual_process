@@ -5,3 +5,4 @@ interactive/
 unsloth_compiled_cache/
 weights/
 **images**
+lora_generated/

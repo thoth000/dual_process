@@ -1,7 +1,7 @@
 pipe_kwargs:
-  pipe_device: cuda:0
+  pipe_device: cuda:1
 vlm_kwargs:
-  vlm_device: cuda:0
+  vlm_device: cuda:2
 opt_kwargs:
   save_weights: True
   opt_cls: torch.optim.AdamW

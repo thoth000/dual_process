@@ -1,6 +1,6 @@
 #!/bin/bash
 
-pipe=schnell
+pipe=sana
 vlm=idefics2
 dataset=demo
 
