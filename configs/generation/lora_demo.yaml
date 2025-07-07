@@ -4,10 +4,10 @@
 lora_generation:
   lora_files:
     - "runs/demo_sana_idefics2/man-smile/0/lora_o-000099.pt"
-    # - "runs/other_experiment/woman-glasses/0/lora_o-000050.pt"  # 複数指定可能
+    - "runs/bald_sana_idefics2/man-bald/0/lora_o-000099.pt"  # 複数指定可能
   lora_weights:
     - 1.0  # 最初のLoRAの重み
-    # - 0.5  # 2番目のLoRAの重み（複数LoRA使用時）
+    - 1.0 # 2番目のLoRAの重み（複数LoRA使用時）
   
   # 比較用オプション
   generate_original: true  # LoRAなしのオリジナル画像も生成するか

@@ -31,7 +31,7 @@ def init_config():
 
 def load_lora_weights(pipe, lora_files, lora_weights=None, lora_config=None):
     """
-    複数のLoRAファイルを読み込み、パイプラインに適用
+    複数のLoRAファイルを重み付きで加算し、パイプラインに適用
     
     Args:
         pipe: 画像生成パイプライン
@@ -54,9 +54,15 @@ def load_lora_weights(pipe, lora_files, lora_weights=None, lora_config=None):
     elif not isinstance(lora_weights, list):
         lora_weights = [lora_weights] * len(lora_files)
     
-    print(f"Loading {len(lora_files)} LoRA files...")
+    # 重みリストの長さを調整
+    if len(lora_weights) < len(lora_files):
+        lora_weights.extend([1.0] * (len(lora_files) - len(lora_weights)))
+    elif len(lora_weights) > len(lora_files):
+        lora_weights = lora_weights[:len(lora_files)]
     
-    # LoRAアダプターを作成（dig_pipeline.pyの慣習に従う）
+    print(f"Loading and combining {len(lora_files)} LoRA files with weights: {lora_weights}")
+    
+    # LoRAアダプターを作成
     default_lora_kwargs = {
         "r": 16,
         "lora_lr": 5e-5,
@@ -75,39 +81,80 @@ def load_lora_weights(pipe, lora_files, lora_weights=None, lora_config=None):
     else:
         lora_kwargs = default_lora_kwargs
     
+    # LoRAアダプターを作成
     lora_params = dig_helpers.create_lora(pipe, **lora_kwargs)
     
-    # 最初のLoRAファイルを読み込み（複数LoRAの場合は最初のもので初期化）
+    # 複数LoRAファイルを重み付きで加算
     if lora_files:
-        lora_file = str(lora_files[0])
+        combined_state_dict = {}
         
-        if not os.path.exists(lora_file):
-            print(f"Warning: Primary LoRA file not found: {lora_file}")
-            return pipe
+        for i, (lora_file, weight) in enumerate(zip(lora_files, lora_weights)):
+            lora_file = str(lora_file)
+            
+            if not os.path.exists(lora_file):
+                print(f"Warning: LoRA file not found: {lora_file}")
+                continue
+            
+            print(f"Loading LoRA {i+1}/{len(lora_files)}: {lora_file} (weight: {weight})")
+            
+            try:
+                # LoRA重みを読み込み
+                lora_state = torch.load(lora_file, map_location=pipe.device)
+                
+                # 重み付きで加算
+                for param_name, param_tensor in lora_state.items():
+                    if param_name not in combined_state_dict:
+                        # 最初のLoRAの場合は重み付きでコピー
+                        combined_state_dict[param_name] = weight * param_tensor.to(pipe.device)
+                    else:
+                        # 2番目以降のLoRAは重み付きで加算
+                        combined_state_dict[param_name] += weight * param_tensor.to(pipe.device)
+                
+                print(f"  ✅ Added LoRA {i+1} with weight {weight}")
+                
+            except Exception as e:
+                print(f"  ❌ Failed to load LoRA {lora_file}: {e}")
+                continue
         
-        print(f"Loading primary LoRA: {lora_file}")
-        
-        try:
-            # 拡張子を除いたファイル名でload_weights()を呼び出し
-            lora_file_path = lora_file.replace(".pt", "") if lora_file.endswith(".pt") else lora_file
-            dig_helpers.load_weights(pipe, lora_file_path)
-            
-            print("LoRA loading completed!")
-            print(f"LoRA will be applied with weight: {lora_weights[0]}")
-            
-            # パイプラインにLoRA重みを記録（生成時に使用）
-            pipe._lora_weight = lora_weights[0]
-            
-            # デバッグ: LoRAアダプターの状態確認
-            backbone = dig_helpers.get_backbone(pipe)
-            if hasattr(backbone, "peft_config"):
-                print(f"✅ LoRA adapter created: {list(backbone.peft_config.keys())}")
-                print(f"✅ Active adapters: {backbone.active_adapters()}")
-            else:
-                print("❌ No LoRA adapter found!")
-            
-        except Exception as e:
-            print(f"Warning: Failed to load LoRA {lora_file}: {e}")
+        # 加算された重みをパイプラインに適用
+        if combined_state_dict:
+            try:
+                # dig_helpersの方法で適用
+                backbone = dig_helpers.get_backbone(pipe)
+                
+                # 重みキーを適切な形式に変換
+                formatted_state_dict = {}
+                for name, param in combined_state_dict.items():
+                    # .weight を .default.weight に変換
+                    formatted_name = name.replace(".weight", ".default.weight")
+                    formatted_state_dict[formatted_name] = param
+                
+                # state_dictを読み込み
+                backbone.load_state_dict(formatted_state_dict, strict=False)
+                
+                print(f"✅ Successfully combined and loaded {len(combined_state_dict)} LoRA parameters")
+                print(f"📊 Combined LoRA weights: {dict(zip(lora_files, lora_weights))}")
+                
+                # パイプラインにLoRA適用フラグを記録
+                pipe._lora_weight = 1.0  # 加算済みなので生成時は1.0で適用
+                pipe._combined_lora_info = {
+                    'files': lora_files,
+                    'weights': lora_weights,
+                    'num_params': len(combined_state_dict)
+                }
+                
+                # デバッグ: LoRAアダプターの状態確認
+                if hasattr(backbone, "peft_config"):
+                    print(f"✅ LoRA adapter created: {list(backbone.peft_config.keys())}")
+                    print(f"✅ Active adapters: {backbone.active_adapters()}")
+                else:
+                    print("❌ No LoRA adapter found!")
+                
+            except Exception as e:
+                print(f"❌ Failed to apply combined LoRA weights: {e}")
+                return pipe
+        else:
+            print("❌ No valid LoRA weights to combine")
             return pipe
     
     return pipe
@@ -158,7 +205,15 @@ def generate_images(pipe, config, save_folder):
     if has_lora:
         print(f"🔧 LoRA adapters available: {list(backbone.peft_config.keys())}")
         lora_weight = getattr(pipe, '_lora_weight', 1.0)
-        print(f"🔧 LoRA weight will be: {lora_weight}")
+        print(f"🔧 LoRA application weight: {lora_weight}")
+        
+        # 複数LoRA情報の表示
+        combined_info = getattr(pipe, '_combined_lora_info', None)
+        if combined_info:
+            print(f"📊 Combined LoRA info:")
+            for i, (file, weight) in enumerate(zip(combined_info['files'], combined_info['weights'])):
+                print(f"  {i+1}. {os.path.basename(file)}: weight={weight}")
+            print(f"  Total parameters: {combined_info['num_params']}")
     else:
         print("🔧 No LoRA adapters - using base model")
     
@@ -177,6 +232,36 @@ def generate_images(pipe, config, save_folder):
         # プロンプトをファイルに保存
         with open(os.path.join(prompt_folder, "prompt.txt"), "w") as f:
             f.write(prompt)
+        
+        # 各プロンプトフォルダに設定ファイルをコピー + プロンプト固有情報を追加
+        main_config_path = os.path.join(save_folder, "generation_config.yaml")
+        prompt_config_path = os.path.join(prompt_folder, "generation_config.yaml")
+        if os.path.exists(main_config_path):
+            # メイン設定を読み込み
+            with open(main_config_path, 'r') as f:
+                prompt_config = OmegaConf.load(f)
+            
+            # プロンプト固有情報を追加
+            from datetime import datetime
+            prompt_config.current_prompt = {
+                'index': prompt_idx,
+                'text': prompt,
+                'folder_name': f"prompt_{prompt_idx:03d}",
+                'generation_timestamp': datetime.now().isoformat()
+            }
+            
+            # 複数LoRA情報があれば追加
+            combined_info = getattr(pipe, '_combined_lora_info', None)
+            if combined_info:
+                prompt_config.applied_lora_info = combined_info
+            
+            # プロンプト固有の設定ファイルを保存
+            OmegaConf.save(prompt_config, prompt_config_path)
+            print(f"  📋 Generated prompt-specific generation_config.yaml")
+        else:
+            # メイン設定ファイルがない場合は基本的なコピー
+            import shutil
+            shutil.copy2(main_config_path, prompt_config_path) if os.path.exists(main_config_path) else None
         
         # オリジナル画像用フォルダ（必要に応じて）
         if generate_original:
@@ -278,7 +363,20 @@ def generate_images(pipe, config, save_folder):
     if generate_original and has_lora:
         print(f"📊 Comparison images generated:")
         print(f"  - Original images (LoRA weight=0): {original_folder}/")
-        print(f"  - LoRA images (LoRA weight={getattr(pipe, '_lora_weight', 1.0)}): {lora_folder}/")
+        print(f"  - LoRA images (combined LoRA applied): {lora_folder}/")
+        
+        # 複数LoRA情報の再表示
+        combined_info = getattr(pipe, '_combined_lora_info', None)
+        if combined_info:
+            print(f"🔗 Combined LoRA summary:")
+            for i, (file, weight) in enumerate(zip(combined_info['files'], combined_info['weights'])):
+                print(f"    {os.path.basename(file)}: {weight}")
+    elif has_lora:
+        combined_info = getattr(pipe, '_combined_lora_info', None)
+        if combined_info:
+            print(f"🔗 Generated with combined LoRA:")
+            for i, (file, weight) in enumerate(zip(combined_info['files'], combined_info['weights'])):
+                print(f"    {os.path.basename(file)}: {weight}")
 
 
 def main():
