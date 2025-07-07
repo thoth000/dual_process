@@ -11,7 +11,7 @@ generator_kwargs:
   num_inference_steps: 20
   guidance_scale: 4.5
 lora_kwargs:
-  lora_lr: 5e-6
+  # lora_lr: 5e-6
   target_modules:
     - to_k
     - to_q

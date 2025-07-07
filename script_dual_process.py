@@ -39,4 +39,5 @@ if __name__ == "__main__":
             # Create edit and params
             edit = dig_pipeline.create_edit(pipe, vlm, vlm_processor, config, qa_pairs, prompt)
             params = dig_helpers.create_lora(pipe, **config["lora_kwargs"])
+            print("learning late", params["lr"])
             dig_pipeline.optimize(pipe, edit, config["opt_kwargs"], config["generator_kwargs"], [params], prompt, qa_folder, config)

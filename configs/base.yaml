@@ -21,6 +21,6 @@ eval_kwargs:
   eval_n: 5
 lora_kwargs:
   r: 16
-  lora_lr: 5e-5
+  lora_lr: 5e-6
   init_lora_weights: gaussian
   lora_dropout: 0.0
